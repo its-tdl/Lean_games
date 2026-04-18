@@ -51,13 +51,13 @@ export default function Lobby() {
     return () => unsubscribe();
   }, [gameId, playerId]);
 
-  return (
-    <div>
-      <h1>Lobby</h1>
-      <p>Game Code: {gameId}</p>
-      <p>Player: {name}</p>
-      <p>ID: {playerId}</p>
-      <p>Waiting for host to start the game...</p>
-    </div>
-  );
+return (
+  <div>
+    <h1>Lobby</h1>
+    <p>Game Code: {gameId}</p>
+    <p>Player: {name}</p>
+    <p>ID: {playerId}</p>
+    <h3>⏳ Waiting for host to start the game...</h3>
+  </div>
+);
 }
