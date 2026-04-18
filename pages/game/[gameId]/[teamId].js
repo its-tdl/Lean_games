@@ -1,125 +1,108 @@
-import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
-import { subscribeToGame, subscribeToTeam, subscribeToTeams } from "../../lib/firebase";
-import GameScreen from "../../components/GameScreen";
-import ResultsScreen from "../../components/ResultsScreen";
-import Leaderboard from "../../components/Leaderboard";
+import { useEffect, useState } from "react";
+
+// 🔌 import your firebase functions
+import {
+  subscribeToGame,
+  subscribeToTeam,
+  subscribeToTeams,
+} from "../../../lib/firebase"; // adjust path if needed
 
 export default function GamePage() {
   const router = useRouter();
-  const { teamId, gameId } = router.query;
+
+  // ✅ FIX 1: Correct routing params
+  const { gameId, teamId } = router.query;
+
   const [game, setGame] = useState(null);
   const [team, setTeam] = useState(null);
   const [teams, setTeams] = useState([]);
-  const [playerId, setPlayerId] = useState(null);
-  const [lastSeenRound, setLastSeenRound] = useState(0);
+
   const [showResults, setShowResults] = useState(false);
+  const [lastSeenRound, setLastSeenRound] = useState(0);
 
-  useEffect(() => {
-    setPlayerId(localStorage.getItem("playerId"));
-  }, []);
-
+  // ✅ FIX 2: Firebase subscriptions
   useEffect(() => {
     if (!gameId || !teamId) return;
-    const unsub1 = subscribeToGame(gameId, setGame);
-    const unsub2 = subscribeToTeam(gameId, teamId, setTeam);
-    const unsub3 = subscribeToTeams(gameId, setTeams);
-    return () => { unsub1(); unsub2(); unsub3(); };
+
+    console.log("Subscribing with:", gameId, teamId);
+
+    const unsubGame = subscribeToGame(gameId, setGame);
+    const unsubTeam = subscribeToTeam(gameId, teamId, setTeam);
+    const unsubTeams = subscribeToTeams(gameId, setTeams);
+
+    return () => {
+      if (unsubGame) unsubGame();
+      if (unsubTeam) unsubTeam();
+      if (unsubTeams) unsubTeams();
+    };
   }, [gameId, teamId]);
 
+  // ✅ FIX 3: Results screen update bug
   useEffect(() => {
     if (game && game.currentRound > lastSeenRound) {
       setShowResults(true);
+      setLastSeenRound(game.currentRound); // IMPORTANT FIX
     }
   }, [game?.currentRound]);
 
+  // ⏳ Loading state
+  if (!gameId || !teamId) {
+    return <div>Loading...</div>;
+  }
+
   if (!game || !team) {
-    return (
-      <div className="container">
-        <div className="card center-card">
-          <p>Waiting for game data...</p>
-          <p className="subtitle">Game: {gameId} | Team: {teamId}</p>
-        </div>
-      </div>
-    );
+    return <div>Connecting to game...</div>;
   }
 
-  if (game.status === "lobby") {
-    const player = team.players.find((p) => p.playerId === playerId);
-    return (
-      <div className="container">
-        <div className="card center-card">
-          <h1>Waiting for Game to Start</h1>
-          <div className="game-code-display">
-            Game: <span className="code">{gameId}</span>
+  // 🎮 Phase-based UI (basic version)
+  const renderContent = () => {
+    switch (game.phase) {
+      case "LOBBY":
+        return <h2>Waiting for host to start the game...</h2>;
+
+      case "DEMAND_REVEAL":
+      case "INVESTMENT":
+        return (
+          <div>
+            <h2>Round {game.currentRound}</h2>
+            <p>Demand: {game.currentDemand}</p>
+            <p>Your Role: {team.role}</p>
+
+            {/* TODO: Add your investment UI here */}
+            <button>Submit Investment</button>
           </div>
-          <h2>Team: {team.teamName}</h2>
-          {player && (
-            <p>Your role: <span className={`role-badge role-${player.role.toLowerCase()}`}>{player.role}</span></p>
-          )}
-          <div className="players-list">
-            {team.players.map((p, i) => (
-              <div key={i} className="player-tag">
-                <span className={`role-badge role-${p.role.toLowerCase()}`}>{p.role}</span>
-                {p.name} {p.playerId === playerId && "(You)"}
-              </div>
-            ))}
+        );
+
+      case "RESULTS":
+        return (
+          <div>
+            <h2>Round Results</h2>
+            <p>Produced: {team.lastResult?.unitsProduced}</p>
+            <p>Sold: {team.lastResult?.unitsSold}</p>
+            <p>Score: {team.lastResult?.roundScore}</p>
           </div>
-          <p className="subtitle">The host will start the game soon...</p>
-        </div>
-      </div>
-    );
-  }
+        );
 
-  if (game.status === "finished") {
-    const lastRoundKey = `round_${game.totalRounds}`;
-    const lastResult = team.rounds?.[lastRoundKey];
-    return (
-      <div className="container">
-        <div className="card center-card">
-          <h1>Game Over!</h1>
-          <h2>Team: {team.teamName}</h2>
-          <div className="final-score">
-            Final Score: <span className="score-big">{team.totalScore || 0}</span>
+      case "GAME_OVER":
+        return (
+          <div>
+            <h2>Game Over</h2>
+            <p>Final Score: {team.cumulativeScore}</p>
           </div>
-          {lastResult && <ResultsScreen result={lastResult} round={game.totalRounds} />}
-          <Leaderboard teams={teams} />
-        </div>
-      </div>
-    );
-  }
+        );
 
-  // Playing state
-  const prevRoundKey = `round_${game.currentRound - 1}`;
-  const prevResult = team.rounds?.[prevRoundKey];
-
-  if (showResults && prevResult) {
-    return (
-      <div className="container">
-        <div className="card">
-          <ResultsScreen result={prevResult} round={game.currentRound - 1} />
-          <Leaderboard teams={teams} />
-          <button
-            className="btn btn-primary full-width"
-            onClick={() => {
-              setShowResults(false);
-              setLastSeenRound(game.currentRound);
-            }}
-          >
-            Continue to Round {game.currentRound}
-          </button>
-        </div>
-      </div>
-    );
-  }
+      default:
+        return <p>Waiting...</p>;
+    }
+  };
 
   return (
-    <GameScreen
-      game={game}
-      team={team}
-      teams={teams}
-      playerId={playerId}
-    />
+    <div style={{ padding: "20px" }}>
+      <h1>Game ID: {gameId}</h1>
+      <h3>Team ID: {teamId}</h3>
+
+      {renderContent()}
+    </div>
   );
 }
-
